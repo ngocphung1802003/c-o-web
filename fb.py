@@ -1,25 +1,30 @@
 import time
 import re
+import streamlit as st
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from webdriver_manager.chrome import ChromeDriverManager
 
 
 def setup_driver():
     chrome_options = Options()
+    # Cấu hình bắt buộc để chạy trên Streamlit Cloud (Linux)
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+
+    # Giảm dấu vết bot
     chrome_options.add_argument(
         "--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--lang=vi")
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
+    # Khởi tạo driver từ binary của hệ thống (đã cài qua packages.txt)
     driver = webdriver.Chrome(options=chrome_options)
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
 
 
 def get_id(url):
@@ -37,7 +42,9 @@ def get_pseudo_content(driver, element, pseudo_type="before"):
 
 def close_popups(driver):
     try:
+        # Nhấn ESC để đóng các overlay
         driver.find_element(By.TAG_NAME, "body").send_keys(Keys.ESCAPE)
+        # Thực thi JS để click nút đóng nếu có
         driver.execute_script("""
             var closeBtn = document.querySelector('div[aria-label="Đóng"], div[aria-label="Close"], div[role="dialog"] div[role="button"]');
             if(closeBtn) closeBtn.click();
@@ -47,10 +54,11 @@ def close_popups(driver):
 
 
 def scrape_facebook_full_stats(urls):
+    # Khởi tạo driver một lần duy nhất
     driver = setup_driver()
     results = []
 
-    # Xpath cho Like/Cmt từ code cũ (Pseudo class)
+    # Xpath cho Like/Cmt dựa trên cấu trúc Facebook
     xpath_stats = "//span[contains(@class, 'x1lliihq') and contains(@class, 'x6ikm8r') and contains(@class, 'xuxw1ft')]"
 
     for i, original_url in enumerate(urls):
@@ -58,7 +66,7 @@ def scrape_facebook_full_stats(urls):
         if not video_id:
             continue
 
-        print(f"[{i+1}/{len(urls)}] Đang xử lý ID: {video_id}")
+        st.write(f"🔍 Đang xử lý [{i+1}/{len(urls)}]: ID {video_id}")
         data = {"url": original_url, "views": "N/A",
                 "likes": "0", "comments": "0", "shares": "0"}
 
@@ -66,21 +74,22 @@ def scrape_facebook_full_stats(urls):
             # --- PHẦN 1: LẤY VIEW (DÙNG /WATCH/) ---
             watch_url = f"https://www.facebook.com/watch/?v={video_id}"
             driver.get(watch_url)
-            time.sleep(6)
+            time.sleep(5)  # Đợi load
             close_popups(driver)
+
             try:
                 view_el = driver.find_element(By.CLASS_NAME, "_26fq")
                 data["views"] = view_el.text.strip()
             except:
                 pass
 
-            # --- PHẦN 2: LẤY LIKE/CMT/SHARE (DÙNG /REEL/) ---
+            # --- PHẦN 2: LẤY LIKE/CMT/SHARE ---
             reel_url = f"https://www.facebook.com/reels/{video_id}/"
             driver.get(reel_url)
-            time.sleep(6)
+            time.sleep(5)
             close_popups(driver)
 
-            # 2.1. Lấy Like & Comment bằng cơ chế Pseudo
+            # Lấy Like & Comment (Pseudo Content)
             stat_elements = driver.find_elements(By.XPATH, xpath_stats)
             temp_stats = []
             for el in stat_elements:
@@ -96,47 +105,43 @@ def scrape_facebook_full_stats(urls):
             if len(temp_stats) >= 2:
                 data["comments"] = temp_stats[1]
 
-            # 2.2. Lấy Share bằng cách nhắm trực tiếp vào div aria-label="Chia sẻ"
+            # Lấy Share
             try:
                 share_div = driver.find_element(
                     By.XPATH, "//div[@aria-label='Chia sẻ' or @aria-label='Share']")
-                # Lấy text trực tiếp hoặc từ span con bên trong
                 share_text = share_div.text.strip()
                 if not share_text:
-                    # Nếu text trống, thử tìm span con
-                    try:
-                        share_text = share_div.find_element(
-                            By.TAG_NAME, "span").text.strip()
-                    except:
-                        pass
-
+                    share_text = share_div.find_element(
+                        By.TAG_NAME, "span").text.strip()
                 data["shares"] = share_text if share_text else "0"
             except:
-                data["shares"] = "0"
+                pass
 
-            print(
-                f"   > {data['views']} | {data['likes']} Like | {data['comments']} Cmt | {data['shares']} Share")
             results.append(data)
 
         except Exception as e:
-            print(f"   > Lỗi: {e}")
+            st.error(f"Lỗi khi cào URL {original_url}: {e}")
             results.append(data)
 
     driver.quit()
     return results
 
 
+# Tích hợp vào Streamlit UI
 if __name__ == "__main__":
-    input_urls = [
-        "https://www.facebook.com/watch/?v=1270887347800010",
-        "https://www.facebook.com/reel/1299971728731776"
-    ]
+    st.set_page_config(page_title="FB Scraper", layout="wide")
+    st.title("🚀 Facebook Video/Reel Scraper")
 
-    final_output = scrape_facebook_full_stats(input_urls)
+    input_text = st.text_area("Nhập danh sách link Facebook (mỗi link một dòng):",
+                              height=150,
+                              value="https://www.facebook.com/watch/?v=1270887347800010")
 
-    print("\n" + "="*100)
-    print(f"{'VIEWS':<15} | {'LIKE':<10} | {'CMT':<10} | {'SHARE':<10} | {'LINK'}")
-    print("-" * 100)
-    for r in final_output:
-        print(
-            f"{r['views']:<15} | {r['likes']:<10} | {r['comments']:<10} | {r['shares']:<10} | {r['url']}")
+    if st.button("Bắt đầu cào dữ liệu"):
+        urls = [url.strip() for url in input_text.split("\n") if url.strip()]
+        if urls:
+            with st.spinner('Đang khởi động trình duyệt ẩn và cào dữ liệu...'):
+                final_output = scrape_facebook_full_stats(urls)
+                st.success("Hoàn thành!")
+                st.table(final_output)
+        else:
+            st.warning("Vui lòng nhập ít nhất một link.")
