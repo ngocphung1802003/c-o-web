@@ -18,6 +18,7 @@ def setup_driver():
     chrome_options.add_argument("--lang=vi")
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+    driver = webdriver.Chrome(options=chrome_options)
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
 
