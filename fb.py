@@ -1,6 +1,7 @@
 import time
 import re
 import streamlit as st
+import shutil
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -8,28 +9,45 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.chrome.service import Service
 
 
 def setup_driver():
     chrome_options = Options()
 
-    chrome_options.add_argument("--headless")
+    # Dùng chuẩn headless mới của Chrome
+    chrome_options.add_argument("--headless=new")
+
+    # Các flag tối quan trọng để chống crash trên Linux container
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--window-size=1920,1080")
+
+    # Tắt các dịch vụ ngầm dễ gây crash "instance exited"
+    chrome_options.add_argument(
+        "--disable-features=NetworkService,NetworkServiceInProcess")
+    chrome_options.add_argument("--disable-features=viz_display_compositor")
+    chrome_options.add_argument("--disable-software-rasterizer")
+
+    # Ẩn danh tính automation
     chrome_options.add_argument(
         "--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--lang=vi")
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
-    # CHÚ Ý: Ép đường dẫn thủ công cho hệ thống Streamlit Cloud (Linux)
-    chrome_options.binary_location = "/usr/bin/chromium"
-    service = Service("/usr/bin/chromedriver")
+    # Tự động dò tìm đường dẫn chuẩn xác nhất trên máy chủ Streamlit
+    chromium_path = shutil.which("chromium") or shutil.which(
+        "chromium-browser") or "/usr/bin/chromium"
+    driver_path = shutil.which("chromedriver") or shutil.which(
+        "chromium-driver") or "/usr/bin/chromedriver"
 
-    # Khởi tạo driver với Service và Options đã cấu hình
+    chrome_options.binary_location = chromium_path
+    service = Service(driver_path)
+
+    # Khởi tạo driver
     driver = webdriver.Chrome(service=service, options=chrome_options)
-
     return driver
 
 
