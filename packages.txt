@@ -3,5 +3,5 @@ chromium-driver
 libnss3
 libatk-bridge2.0-0
 libgbm1
-libasound2
+libasound2t64
 fonts-liberation
