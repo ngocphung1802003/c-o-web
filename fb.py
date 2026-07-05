@@ -12,21 +12,24 @@ from selenium.common.exceptions import TimeoutException
 
 def setup_driver():
     chrome_options = Options()
-    # Cấu hình bắt buộc để chạy trên Streamlit Cloud (Linux)
+
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-
-    # Giảm dấu vết bot
     chrome_options.add_argument(
         "--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--lang=vi")
     chrome_options.add_argument(
         "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
-    # Khởi tạo driver từ binary của hệ thống (đã cài qua packages.txt)
-    driver = webdriver.Chrome(options=chrome_options)
+    # CHÚ Ý: Ép đường dẫn thủ công cho hệ thống Streamlit Cloud (Linux)
+    chrome_options.binary_location = "/usr/bin/chromium"
+    service = Service("/usr/bin/chromedriver")
+
+    # Khởi tạo driver với Service và Options đã cấu hình
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+
     return driver
 
 
