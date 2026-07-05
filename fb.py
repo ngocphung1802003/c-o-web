@@ -5,6 +5,9 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
 
 def setup_driver():
@@ -54,11 +57,10 @@ def close_popups(driver):
 
 
 def scrape_facebook_full_stats(urls):
-    # Khởi tạo driver một lần duy nhất
     driver = setup_driver()
     results = []
 
-    # Xpath cho Like/Cmt dựa trên cấu trúc Facebook
+    # Xpath cho Like/Cmt
     xpath_stats = "//span[contains(@class, 'x1lliihq') and contains(@class, 'x6ikm8r') and contains(@class, 'xuxw1ft')]"
 
     for i, original_url in enumerate(urls):
@@ -74,47 +76,62 @@ def scrape_facebook_full_stats(urls):
             # --- PHẦN 1: LẤY VIEW (DÙNG /WATCH/) ---
             watch_url = f"https://www.facebook.com/watch/?v={video_id}"
             driver.get(watch_url)
-            time.sleep(5)  # Đợi load
+
+            # Đóng popup ngay sau khi trang bắt đầu tải
+            time.sleep(1)  # Nghỉ rất ngắn để DOM khởi tạo body
             close_popups(driver)
 
             try:
-                view_el = driver.find_element(By.CLASS_NAME, "_26fq")
+                # Đợi tối đa 10s cho đến khi element class "_26fq" xuất hiện
+                view_el = WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "_26fq"))
+                )
                 data["views"] = view_el.text.strip()
-            except:
-                pass
+            except TimeoutException:
+                pass  # Bỏ qua nếu sau 10s không tìm thấy view
 
             # --- PHẦN 2: LẤY LIKE/CMT/SHARE ---
             reel_url = f"https://www.facebook.com/reels/{video_id}/"
             driver.get(reel_url)
-            time.sleep(5)
+
+            time.sleep(1)
             close_popups(driver)
 
-            # Lấy Like & Comment (Pseudo Content)
-            stat_elements = driver.find_elements(By.XPATH, xpath_stats)
-            temp_stats = []
-            for el in stat_elements:
-                v_real = el.text.strip()
-                v_before = get_pseudo_content(driver, el, "before")
-                v_after = get_pseudo_content(driver, el, "after")
-                combined = (v_before + v_real + v_after).strip()
-                if any(char.isdigit() for char in combined):
-                    temp_stats.append(combined)
-
-            if len(temp_stats) >= 1:
-                data["likes"] = temp_stats[0]
-            if len(temp_stats) >= 2:
-                data["comments"] = temp_stats[1]
-
-            # Lấy Share
             try:
-                share_div = driver.find_element(
-                    By.XPATH, "//div[@aria-label='Chia sẻ' or @aria-label='Share']")
+                # Đợi tối đa 10s cho đến khi TẤT CẢ các element stats xuất hiện
+                stat_elements = WebDriverWait(driver, 10).until(
+                    EC.presence_of_all_elements_located(
+                        (By.XPATH, xpath_stats))
+                )
+
+                temp_stats = []
+                for el in stat_elements:
+                    v_real = el.text.strip()
+                    v_before = get_pseudo_content(driver, el, "before")
+                    v_after = get_pseudo_content(driver, el, "after")
+                    combined = (v_before + v_real + v_after).strip()
+                    if any(char.isdigit() for char in combined):
+                        temp_stats.append(combined)
+
+                if len(temp_stats) >= 1:
+                    data["likes"] = temp_stats[0]
+                if len(temp_stats) >= 2:
+                    data["comments"] = temp_stats[1]
+            except TimeoutException:
+                pass
+
+            # Lấy Share (Dùng WebDriverWait riêng biệt để không ảnh hưởng Like/Cmt nếu Share bị thiếu)
+            try:
+                share_div = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located(
+                        (By.XPATH, "//div[@aria-label='Chia sẻ' or @aria-label='Share']"))
+                )
                 share_text = share_div.text.strip()
                 if not share_text:
                     share_text = share_div.find_element(
                         By.TAG_NAME, "span").text.strip()
                 data["shares"] = share_text if share_text else "0"
-            except:
+            except (TimeoutException, Exception):
                 pass
 
             results.append(data)
